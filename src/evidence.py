@@ -2,14 +2,16 @@
 
 Every package is preceded by a PolicyDecision. The decision is hashed and bound
 into the authorization field so the final package_hash covers both the prior
-authorization and the outcome. Verification checks decision integrity and basic
-policy bounds.
+authorization and the outcome. Verification checks decision integrity, basic
+policy bounds, and (when a public key is supplied) the Ed25519 delegation proof.
 """
 
 import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any
+
+from src.delegation import verify_delegation, public_key_from_b64
 
 
 def _canonical(obj: dict) -> bytes:
@@ -103,8 +105,16 @@ def build_package(
     return package
 
 
-def verify_package(package: dict, policy_decision: dict | None = None) -> tuple[bool, str]:
-    """Verify package integrity and, if policy_decision is supplied, basic bounds."""
+def verify_package(
+    package: dict,
+    policy_decision: dict | None = None,
+    principal_public_key_b64: str | None = None,
+) -> tuple[bool, str]:
+    """Verify package integrity, policy bounds, and optional delegation signature.
+
+    When principal_public_key_b64 is supplied, the delegation_proof must be a
+    valid Ed25519 signature over the exact policy decision hash.
+    """
     required = [
         "version", "agent_identity", "authorization", "action_hash",
         "action_type", "provider", "target", "submitted_at", "result", "package_hash"
@@ -124,8 +134,18 @@ def verify_package(package: dict, policy_decision: dict | None = None) -> tuple[
     if not isinstance(auth, dict) or "policy_decision_hash" not in auth or "delegation_proof" not in auth:
         return False, "invalid authorization"
 
+    decision_hash_value = auth["policy_decision_hash"]
+
+    if principal_public_key_b64 is not None:
+        try:
+            pub = public_key_from_b64(principal_public_key_b64)
+        except Exception:
+            return False, "invalid principal public key encoding"
+        if not verify_delegation(pub, decision_hash_value, auth["delegation_proof"]):
+            return False, "delegation signature verification failed"
+
     if policy_decision is not None:
-        if decision_hash(policy_decision) != auth["policy_decision_hash"]:
+        if decision_hash(policy_decision) != decision_hash_value:
             return False, "policy_decision_hash does not match supplied decision"
 
         # Basic bounds checks

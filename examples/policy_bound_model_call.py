@@ -1,31 +1,51 @@
-"""End-to-end: policy decision → model call → evidence package → verify."""
+"""End-to-end with real Ed25519 delegation proof."""
 
 from datetime import datetime, timedelta, timezone
 
-from src.evidence import build_policy_decision, build_package, verify_package
+from src.delegation import generate_keypair, public_key_to_b64, sign_delegation
+from src.evidence import build_policy_decision, build_package, verify_package, decision_hash
 
 
 def main():
-    # 1. Principal issues a policy decision
+    # 1. Principal keypair
+    private, public = generate_keypair()
+    pub_b64 = public_key_to_b64(public)
+    print("Principal public key (b64):", pub_b64[:32] + "...")
+
     principal = {"id": "user:alice", "type": "human"}
     expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
+    # 2. Build unsigned decision, hash it, then sign
+    unsigned = {
+        "policy_id": "policy:research-001",
+        "principal": principal,
+        "allowed_action_types": ["model_call"],
+        "allowed_providers": ["xai", "openai", "anthropic"],
+        "allowed_targets": ["grok-4", "gpt-4o", "claude-3-5-sonnet"],
+        "max_cost_usd": 0.05,
+        "expires_at": expires,
+        "delegation_proof": "",  # placeholder until signed
+    }
+    d_hash = decision_hash(unsigned)
+    signature = sign_delegation(private, d_hash)
+
     policy = build_policy_decision(
-        policy_id="policy:research-001",
+        policy_id=unsigned["policy_id"],
         principal=principal,
-        allowed_action_types=["model_call"],
-        allowed_providers=["xai", "openai", "anthropic"],
-        allowed_targets=["grok-4", "gpt-4o", "claude-3-5-sonnet"],
-        max_cost_usd=0.05,
+        allowed_action_types=unsigned["allowed_action_types"],
+        allowed_providers=unsigned["allowed_providers"],
+        allowed_targets=unsigned["allowed_targets"],
+        max_cost_usd=unsigned["max_cost_usd"],
         expires_at=expires,
-        delegation_proof="sig:placeholder-alice-delegation",
+        delegation_proof=signature,
     )
     print("Policy decision hash:", policy["decision_hash"])
+    print("Delegation proof is real Ed25519 signature")
 
-    # 2. Agent executes within policy (mocked)
+    # 3. Agent executes within policy (mocked)
     agent = {
         "id": "agent:example-01",
-        "public_key": "ed25519:placeholder-pubkey",
+        "public_key": "ed25519:" + pub_b64,
         "key_type": "ed25519",
     }
 
@@ -57,19 +77,16 @@ def main():
 
     print("Package hash:", package["package_hash"])
 
-    # 3. Independent verification (with the policy)
-    ok, reason = verify_package(package, policy_decision=policy)
+    # 4. Independent verification with signature check
+    ok, reason = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
     print(f"Verification: {ok} ({reason})")
 
-    # Tamper the result
+    # Tamper the result (package hash fails)
     package["result"]["data"]["content"] = "tampered"
-    ok2, reason2 = verify_package(package, policy_decision=policy)
+    ok2, reason2 = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
     print(f"After result tamper: {ok2} ({reason2})")
 
-    # Restore and violate cost
-    package["result"]["data"]["content"] = "Policy decision is hashed and bound into the package."
-    package["package_hash"] = None  # force recompute later if needed; for demo we just show bounds
-    # Rebuild a violating package
+    # Cost violation
     bad = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -78,10 +95,25 @@ def main():
         provider="xai",
         target="grok-4",
         result=result,
-        settlement={"cost_usd": 1.0},  # exceeds max
+        settlement={"cost_usd": 1.0},
     )
-    ok3, reason3 = verify_package(bad, policy_decision=policy)
+    ok3, reason3 = verify_package(bad, policy_decision=policy, principal_public_key_b64=pub_b64)
     print(f"Cost violation: {ok3} ({reason3})")
+
+    # Wrong signature (swapped)
+    other_private, _ = generate_keypair()
+    other_sig = sign_delegation(other_private, policy["decision_hash"])
+    policy_bad_sig = dict(policy)
+    policy_bad_sig["delegation_proof"] = other_sig
+    # rebuild package with bad sig would fail hash, so just check verify_delegation path via package auth
+    package_bad = dict(package)
+    package_bad["authorization"] = dict(package["authorization"])
+    package_bad["authorization"]["delegation_proof"] = other_sig
+    package_bad["package_hash"] = None  # force recompute not needed; we check signature separately
+    # Direct signature check fails
+    from src.delegation import verify_delegation, public_key_from_b64
+    sig_ok = verify_delegation(public_key_from_b64(pub_b64), policy["decision_hash"], other_sig)
+    print(f"Wrong-key signature: {sig_ok}")
 
 
 if __name__ == "__main__":
