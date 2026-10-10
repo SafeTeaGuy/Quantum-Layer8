@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/SafeTeaGuy/Quantum-Layer8/schema/quantum_job_evidence.schema.json",
+  "title": "QuantumJobEvidence",
+  "description": "Portable, independently verifiable evidence package for a quantum job execution bound to an agent identity and delegated authority.",
+  "type": "object",
+  "required": [
+    "version",
+    "agent_identity",
+    "authorization",
+    "job_hash",
+    "provider",
+    "device_id",
+    "submitted_at",
+    "results",
+    "package_hash"
+  ],
+  "properties": {
+    "version": { "type": "string", "const": "0.1.0" },
+    "agent_identity": {
+      "type": "object",
+      "required": ["id", "public_key"],
+      "properties": {
+        "id": { "type": "string" },
+        "public_key": { "type": "string" },
+        "key_type": { "type": "string", "enum": ["ed25519", "ml-dsa", "hybrid"] }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "required": ["delegation_proof"],
+      "properties": {
+        "delegation_proof": { "type": "string", "description": "Signature or receipt proving the agent was authorized to submit this job" },
+        "policy_id": { "type": "string" },
+        "intent_hash": { "type": "string" }
+      }
+    },
+    "job_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the exact circuit / program / QASM / IR that was submitted"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["ibm-quantum", "amazon-braket", "azure-quantum", "google-quantum", "other"]
+    },
+    "device_id": { "type": "string" },
+    "backend_version": { "type": "string" },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "executed_at": { "type": "string", "format": "date-time" },
+    "calibration_snapshot": {
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "pointer": { "type": "string", "description": "URL or job-id reference to full calibration data" },
+        "summary": {
+          "type": "object",
+          "properties": {
+            "avg_t1_us": { "type": "number" },
+            "avg_t2_us": { "type": "number" },
+            "avg_readout_error": { "type": "number" },
+            "gate_fidelities": { "type": "object" }
+          }
+        }
+      }
+    },
+    "results": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["counts", "samples", "expectation", "bitstrings", "other"] },
+        "data": {},
+        "shots": { "type": "integer" },
+        "error_bounds": {
+          "type": "object",
+          "properties": {
+            "method": { "type": "string" },
+            "value": { "type": "number" }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "max_shots": { "type": "integer" },
+        "allowed_backends": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "settlement": {
+      "type": "object",
+      "properties": {
+        "resource_units": { "type": "number" },
+        "cost_usd": { "type": "number" },
+        "receipt_id": { "type": "string" }
+      }
+    },
+    "provider_attestation": {
+      "type": "object",
+      "properties": {
+        "signature": { "type": "string" },
+        "signer": { "type": "string" },
+        "algorithm": { "type": "string" }
+      }
+    },
+    "package_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the canonical JSON of this package excluding the package_hash field itself"
+    }
+  }
+}

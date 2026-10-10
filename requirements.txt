@@ -1,0 +1,2 @@
+# Minimal — no quantum SDKs required to use the evidence format itself.
+# Add qiskit-ibm-runtime or amazon-braket-sdk only when wiring real adapters.
