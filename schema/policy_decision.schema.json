@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/SafeTeaGuy/Quantum-Layer8/schema/policy_decision.schema.json",
+  "title": "PolicyDecision",
+  "description": "Prior authorization decision that must exist before an agent action is allowed to proceed. Bound into the evidence package so the receipt proves both the decision and the outcome.",
+  "type": "object",
+  "required": [
+    "policy_id",
+    "principal",
+    "allowed_action_types",
+    "expires_at",
+    "delegation_proof",
+    "decision_hash"
+  ],
+  "properties": {
+    "policy_id": { "type": "string" },
+    "principal": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["human", "organization", "agent"] }
+      }
+    },
+    "allowed_action_types": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["model_call", "tool_call", "quantum_job", "payment", "other"] },
+      "minItems": 1
+    },
+    "allowed_providers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Empty or omitted means any provider"
+    },
+    "allowed_targets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Empty or omitted means any target"
+    },
+    "max_cost_usd": { "type": "number" },
+    "data_constraints": { "type": "object" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "delegation_proof": { "type": "string", "description": "Signature or receipt from the principal" },
+    "decision_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the canonical form excluding this field"
+    }
+  }
+}
