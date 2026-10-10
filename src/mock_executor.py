@@ -1,18 +1,19 @@
-"""Deterministic local mock executor for end-to-end policy-bound actions.
+"""Deterministic local mock executor that can also produce a signed execution receipt.
 
-No network, no credentials, no external trust. Used to demonstrate the full
-flow: request → policy evaluation → decision → signature → execution → evidence.
+No network, no credentials. Software-key attestation only.
 """
 
+import uuid
+from datetime import datetime, timezone
 from typing import Any
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from src.execution_receipt import create_signed_receipt, request_hash, result_hash
 
 
 def execute_model_call(request: dict) -> dict:
-    """Deterministic mock of a model call boundary.
-
-    Returns a result that can be packaged. The content is derived only from
-    the request so the path is reproducible.
-    """
+    """Deterministic mock of a model call boundary."""
     model = request.get("model", "unknown")
     messages = request.get("messages", [])
     last = messages[-1].get("content", "") if messages else ""
@@ -24,3 +25,23 @@ def execute_model_call(request: dict) -> dict:
         },
         "status": "completed",
     }
+
+
+def execute_and_sign(
+    private_key: Ed25519PrivateKey,
+    decision_hash: str,
+    request: dict,
+    execution_id: str | None = None,
+) -> tuple[dict, dict]:
+    """Execute the mock call and return (result, signed_receipt)."""
+    result = execute_model_call(request)
+    eid = execution_id or str(uuid.uuid4())
+    receipt = create_signed_receipt(
+        private_key=private_key,
+        decision_hash=decision_hash,
+        request=request,
+        result=result,
+        execution_id=eid,
+        executed_at=datetime.now(timezone.utc).isoformat(),
+    )
+    return result, receipt

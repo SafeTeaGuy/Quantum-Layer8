@@ -3,8 +3,8 @@
 Every package is preceded by a PolicyDecision. The decision is hashed and bound
 into the authorization field so the final package_hash covers both the prior
 authorization and the outcome. Verification checks decision integrity, basic
-policy bounds, delegation signature (when key supplied), expiry, and agent
-identity public-key well-formedness.
+policy bounds, delegation signature (when key supplied), expiry, agent identity,
+and (when present) the signed execution receipt.
 
 Production trusted-time semantics remain unresolved. Callers must supply an
 explicit verification_time.
@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.delegation import verify_delegation, public_key_from_b64
+from src.execution_receipt import verify_execution_receipt, request_hash as compute_request_hash, result_hash as compute_result_hash
 
 
 def _canonical(obj: dict) -> bytes:
@@ -40,7 +41,6 @@ def _parse_iso8601(ts: str) -> datetime | None:
     if not isinstance(ts, str) or not ts:
         return None
     try:
-        # Require timezone-aware
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
         if dt.tzinfo is None:
             return None
@@ -132,11 +132,13 @@ def verify_package(
     principal_public_key_b64: str | None = None,
     verification_time: datetime | None = None,
     expected_agent_public_key_b64: str | None = None,
+    expected_executor_public_key_b64: str | None = None,
+    request: dict | None = None,
 ) -> tuple[bool, str]:
-    """Verify package integrity, policy bounds, delegation signature, expiry, and agent key.
+    """Verify package integrity, policy bounds, delegation signature, expiry, agent key, and execution receipt.
 
     verification_time must be supplied for expiry checks. Production trusted-time
-    is not claimed.
+    is not claimed. When an execution_receipt is present it is independently verified.
     """
     required = [
         "version", "agent_identity", "authorization", "action_hash",
@@ -159,17 +161,17 @@ def verify_package(
 
     decision_hash_value = auth["policy_decision_hash"]
 
-    # Agent identity public-key well-formedness (real bytes, not string compare)
+    # Agent identity public-key well-formedness
     agent_id = package.get("agent_identity") or {}
     agent_pub_b64 = agent_id.get("public_key")
     if not agent_pub_b64:
         return False, "missing agent public_key"
     try:
+        from cryptography.hazmat.primitives import serialization
         agent_pub = public_key_from_b64(agent_pub_b64)
-        # Force materialization of bytes
-        _ = agent_pub.public_bytes_raw() if hasattr(agent_pub, "public_bytes_raw") else agent_pub.public_bytes(
-            encoding=__import__("cryptography.hazmat.primitives.serialization", fromlist=["Encoding"]).Encoding.Raw,
-            format=__import__("cryptography.hazmat.primitives.serialization", fromlist=["PublicFormat"]).PublicFormat.Raw,
+        _ = agent_pub.public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
         )
     except Exception:
         return False, "malformed agent public key"
@@ -185,6 +187,34 @@ def verify_package(
             return False, "invalid principal public key encoding"
         if not verify_delegation(pub, decision_hash_value, auth["delegation_proof"]):
             return False, "delegation signature verification failed"
+
+    # Execution receipt verification (independent of package hash)
+    receipt = package.get("execution_receipt")
+    if receipt is not None:
+        if not isinstance(receipt, dict) or "payload" not in receipt or "signature" not in receipt:
+            return False, "malformed execution_receipt"
+        payload = receipt["payload"]
+        sig = receipt["signature"]
+        exec_pub_b64 = payload.get("executor_public_key")
+        if not exec_pub_b64:
+            return False, "missing executor public key in receipt"
+        try:
+            exec_pub = public_key_from_b64(exec_pub_b64)
+        except Exception:
+            return False, "malformed executor public key"
+        if not verify_execution_receipt(exec_pub, payload, sig):
+            return False, "execution receipt signature verification failed"
+        if payload.get("decision_hash") != decision_hash_value:
+            return False, "receipt decision_hash mismatch"
+        if request is not None:
+            if payload.get("request_hash") != compute_request_hash(request):
+                return False, "receipt request_hash mismatch"
+        actual_result_hash = compute_result_hash(package["result"])
+        if payload.get("result_hash") != actual_result_hash:
+            return False, "receipt result_hash mismatch"
+        if expected_executor_public_key_b64 is not None:
+            if exec_pub_b64 != expected_executor_public_key_b64:
+                return False, "executor public key mismatch"
 
     if policy_decision is not None:
         if decision_hash(policy_decision) != decision_hash_value:
