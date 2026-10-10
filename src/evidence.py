@@ -6,6 +6,8 @@ authorization and the outcome. Verification checks decision integrity, basic
 policy bounds, delegation signature (when key supplied), expiry, agent identity,
 and (when present) the signed execution receipt.
 
+Optional replay protection consults a local store.
+
 Production trusted-time semantics remain unresolved. Callers must supply an
 explicit verification_time.
 """
@@ -13,10 +15,14 @@ explicit verification_time.
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from src.delegation import verify_delegation, public_key_from_b64
 from src.execution_receipt import verify_execution_receipt, request_hash as compute_request_hash, result_hash as compute_result_hash
+
+
+class ReplayStore(Protocol):
+    def check_and_record(self, execution_id: str) -> bool: ...
 
 
 def _canonical(obj: dict) -> bytes:
@@ -134,11 +140,13 @@ def verify_package(
     expected_agent_public_key_b64: str | None = None,
     expected_executor_public_key_b64: str | None = None,
     request: dict | None = None,
+    replay_store: ReplayStore | None = None,
 ) -> tuple[bool, str]:
     """Verify package integrity, policy bounds, delegation signature, expiry, agent key, and execution receipt.
 
     verification_time must be supplied for expiry checks. Production trusted-time
     is not claimed. When an execution_receipt is present it is independently verified.
+    Optional replay_store rejects reuse of execution_id.
     """
     required = [
         "version", "agent_identity", "authorization", "action_hash",
@@ -215,6 +223,12 @@ def verify_package(
         if expected_executor_public_key_b64 is not None:
             if exec_pub_b64 != expected_executor_public_key_b64:
                 return False, "executor public key mismatch"
+
+        # Optional replay check
+        if replay_store is not None:
+            eid = payload.get("execution_id")
+            if not eid or not replay_store.check_and_record(eid):
+                return False, "execution_id replay detected"
 
     if policy_decision is not None:
         if decision_hash(policy_decision) != decision_hash_value:
