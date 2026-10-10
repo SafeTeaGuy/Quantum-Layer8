@@ -1,4 +1,4 @@
-"""Minimal end-to-end example of building and verifying a quantum job evidence package."""
+"""Quantum job evidence example (uses the generalized package)."""
 
 from src.evidence import build_package, verify_package
 
@@ -12,26 +12,28 @@ def main():
     auth = {
         "delegation_proof": "sig:placeholder-layer8-delegation",
         "policy_id": "policy:quantum-research-001",
-        "intent_hash": "a" * 64,
     }
 
     package = build_package(
         agent_identity=agent,
         authorization=auth,
-        job_hash="b" * 64,
+        action_hash="b" * 64,
+        action_type="quantum_job",
         provider="ibm-quantum",
-        device_id="ibm_kingston",
-        results={
+        target="ibm_kingston",
+        result={
             "type": "counts",
             "data": {"00": 512, "11": 512},
-            "shots": 1024,
+            "status": "completed",
             "error_bounds": {"method": "reported", "value": 0.02},
         },
-        calibration_snapshot={
-            "timestamp": "2026-10-10T22:00:00Z",
-            "pointer": "ibm://backend/ibm_kingston/properties/2026-10-10T21:55:00Z",
-            "hash": "c" * 64,
-            "summary": {"avg_readout_error": 0.015},
+        quantum={
+            "device_id": "ibm_kingston",
+            "calibration_snapshot": {
+                "timestamp": "2026-10-10T22:00:00Z",
+                "pointer": "ibm://backend/ibm_kingston/properties/2026-10-10T21:55:00Z",
+                "hash": "c" * 64,
+            },
         },
         settlement={"resource_units": 0.1, "receipt_id": "job-abc123"},
     )
@@ -40,8 +42,7 @@ def main():
     ok, reason = verify_package(package)
     print(f"Verification: {ok} ({reason})")
 
-    # Tamper test
-    package["results"]["data"]["00"] = 999
+    package["result"]["data"]["00"] = 999
     ok2, reason2 = verify_package(package)
     print(f"After tamper: {ok2} ({reason2})")
 

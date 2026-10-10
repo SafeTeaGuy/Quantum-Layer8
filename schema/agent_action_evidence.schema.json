@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/SafeTeaGuy/Quantum-Layer8/schema/agent_action_evidence.schema.json",
+  "title": "AgentActionEvidence",
+  "description": "Portable, independently verifiable evidence package for any consequential agent action bound to identity and delegated authority. Quantum jobs are one action type.",
+  "type": "object",
+  "required": [
+    "version",
+    "agent_identity",
+    "authorization",
+    "action_hash",
+    "action_type",
+    "provider",
+    "target",
+    "submitted_at",
+    "result",
+    "package_hash"
+  ],
+  "properties": {
+    "version": { "type": "string", "const": "0.2.0" },
+    "agent_identity": {
+      "type": "object",
+      "required": ["id", "public_key"],
+      "properties": {
+        "id": { "type": "string" },
+        "public_key": { "type": "string" },
+        "key_type": { "type": "string", "enum": ["ed25519", "ml-dsa", "hybrid"] }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "required": ["delegation_proof"],
+      "properties": {
+        "delegation_proof": { "type": "string" },
+        "policy_id": { "type": "string" },
+        "intent_hash": { "type": "string" }
+      }
+    },
+    "action_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the exact submitted payload"
+    },
+    "action_type": {
+      "type": "string",
+      "enum": ["model_call", "tool_call", "quantum_job", "payment", "other"]
+    },
+    "provider": { "type": "string" },
+    "target": { "type": "string", "description": "Model name, tool name, device id, endpoint, etc." },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "executed_at": { "type": "string", "format": "date-time" },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "constraints": { "type": "object" }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string" },
+        "data": {},
+        "status": { "type": "string" },
+        "error_bounds": { "type": "object" }
+      }
+    },
+    "settlement": {
+      "type": "object",
+      "properties": {
+        "cost_usd": { "type": "number" },
+        "resource_units": { "type": "number" },
+        "receipt_id": { "type": "string" }
+      }
+    },
+    "provider_attestation": {
+      "type": "object",
+      "properties": {
+        "signature": { "type": "string" },
+        "signer": { "type": "string" },
+        "algorithm": { "type": "string" }
+      }
+    },
+    "quantum": {
+      "type": "object",
+      "description": "Optional quantum-specific extensions",
+      "properties": {
+        "device_id": { "type": "string" },
+        "backend_version": { "type": "string" },
+        "calibration_snapshot": { "type": "object" }
+      }
+    },
+    "package_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

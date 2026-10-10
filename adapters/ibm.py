@@ -1,10 +1,4 @@
-"""IBM Quantum adapter stub.
-
-Extracts what can be extracted from a Qiskit Runtime job result and maps it
-into a QuantumJobEvidence package. Real calibration snapshots require a
-separate call to backend.properties(datetime=...) and are left as a pointer
-here so the package stays small.
-"""
+"""IBM Quantum adapter (uses generalized package)."""
 
 from datetime import datetime, timezone
 from typing import Any
@@ -21,39 +15,31 @@ def from_ibm_job(
     circuit_hash: str,
     calibration_pointer: str | None = None,
 ) -> dict:
-    """Map an IBM job result into an evidence package.
-
-    In production this would pull:
-    - job.result()
-    - job.metrics() / usage
-    - backend.properties() near execution time
-    - job.inputs() for the exact submitted circuit
-    """
-    # Minimal extraction — replace with real RuntimeEncoder paths
     counts = getattr(job_result, "get_counts", lambda: {})()
     shots = sum(counts.values()) if isinstance(counts, dict) else None
 
-    results = {
+    result = {
         "type": "counts",
         "data": counts,
         "shots": shots,
+        "status": "completed",
     }
 
-    calibration = None
+    quantum = {"device_id": backend_name}
     if calibration_pointer:
-        calibration = {
+        quantum["calibration_snapshot"] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "pointer": calibration_pointer,
-            "hash": "placeholder-until-real-snapshot-hash",
         }
 
     return build_package(
         agent_identity=agent_identity,
         authorization=authorization,
-        job_hash=circuit_hash,
+        action_hash=circuit_hash,
+        action_type="quantum_job",
         provider="ibm-quantum",
-        device_id=backend_name,
-        results=results,
-        calibration_snapshot=calibration,
+        target=backend_name,
+        result=result,
+        quantum=quantum,
         settlement={"receipt_id": job_id},
     )
