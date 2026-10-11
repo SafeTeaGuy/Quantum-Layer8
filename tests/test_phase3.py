@@ -214,6 +214,35 @@ def test_full_successful_path():
     assert ok, reason
 
 
+def test_unpinned_executor_fails():
+    priv_exec, _pub_exec = generate_keypair()
+    priv_prin, pub_prin = generate_keypair()
+    policy, prin_b64 = _make_policy(priv_prin)
+    request = {"model": "grok-4", "messages": [{"role": "user", "content": "hi"}]}
+    result, receipt = execute_and_sign(priv_exec, policy["decision_hash"], request)
+    agent = {"id": "a", "public_key": public_key_to_b64(pub_prin), "key_type": "ed25519"}
+    package = build_package(
+        agent_identity=agent,
+        policy_decision=policy,
+        action_hash=request_hash(request),
+        action_type="model_call",
+        provider="xai",
+        target="grok-4",
+        result=result,
+        execution_receipt=receipt,
+    )
+    now = datetime.now(timezone.utc)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=prin_b64,
+        verification_time=now,
+        request=request,
+    )
+    assert not ok
+    assert reason == "executor public key not pinned"
+
+
 def test_missing_receipt_rejected_only_when_required():
     priv, pub = generate_keypair()
     policy, pub_b64 = _make_policy(priv)

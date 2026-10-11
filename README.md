@@ -19,7 +19,7 @@ Minimal prototype of an authority-and-evidence substrate.
 - Optional local replay store on execution_id (recorded only after every other check passes)
 - `require_execution_receipt=True` rejects a package with no receipt. The default is off, so a policy-only check can still pass. That pass does not authenticate the result.
 
-The executor key is trusted only when the verifier passes the expected key. Without that pin, a packager can sign a receipt with their own key.
+- A receipt is accepted only when `expected_executor_public_key_b64` is passed and matches the receipt. An unpinned receipt fails closed.
 
 ## Non-goals (this prototype)
 

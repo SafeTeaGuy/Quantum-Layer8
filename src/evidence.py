@@ -158,7 +158,8 @@ def verify_package(
 
     verification_time must be supplied for expiry checks. Production trusted-time
     is not claimed. When an execution_receipt is present it is independently
-    verified, and action_hash must equal the receipt request_hash.
+    verified, and action_hash must equal the receipt request_hash. A receipt is
+    accepted only when expected_executor_public_key_b64 is supplied and matches.
     require_execution_receipt rejects a package that has none. The default is
     false so a policy-only package can still be checked; that pass does not
     authenticate the result.
@@ -242,9 +243,10 @@ def verify_package(
             return False, "receipt result_hash mismatch"
         if payload.get("request_hash") != package.get("action_hash"):
             return False, "receipt request_hash does not match action_hash"
-        if expected_executor_public_key_b64 is not None:
-            if exec_pub_b64 != expected_executor_public_key_b64:
-                return False, "executor public key mismatch"
+        if not expected_executor_public_key_b64:
+            return False, "executor public key not pinned"
+        if exec_pub_b64 != expected_executor_public_key_b64:
+            return False, "executor public key mismatch"
 
     if policy_decision is not None:
         if decision_hash(policy_decision) != decision_hash_value:
