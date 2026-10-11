@@ -1,31 +1,34 @@
-"""End-to-end deterministic execution path with real delegation proof."""
+"""End-to-end deterministic execution path using the strong verification API."""
 
 from datetime import datetime, timedelta, timezone
-import hashlib
-import json
 
 from src.delegation import generate_keypair, public_key_to_b64, sign_delegation
-from src.evidence import build_policy_decision, build_package, verify_package, decision_hash
-from src.mock_executor import execute_model_call
+from src.evidence import (
+    build_policy_decision,
+    build_package,
+    verify_authorized_execution,
+    decision_hash,
+)
+from src.execution_receipt import request_hash
+from src.mock_executor import execute_and_sign
+from src.replay import InMemoryReplayStore
 
 
 def main():
-    private, public = generate_keypair()
-    pub_b64 = public_key_to_b64(public)
+    principal_priv, principal_pub = generate_keypair()
+    executor_priv, executor_pub = generate_keypair()
+    principal_b64 = public_key_to_b64(principal_pub)
+    executor_b64 = public_key_to_b64(executor_pub)
 
     principal = {"id": "user:alice", "type": "human"}
     expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
 
-    # Policy evaluation (hard-coded allow for the demo)
     request = {
         "model": "grok-4",
         "messages": [{"role": "user", "content": "What is the evidence package?"}],
     }
-    action_hash = hashlib.sha256(
-        json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    action_hash = request_hash(request)
 
-    # Build and sign decision
     unsigned = {
         "policy_id": "policy:demo",
         "principal": principal,
@@ -37,7 +40,7 @@ def main():
         "delegation_proof": "",
     }
     d_hash = decision_hash(unsigned)
-    sig = sign_delegation(private, d_hash)
+    sig = sign_delegation(principal_priv, d_hash)
     policy = build_policy_decision(
         policy_id="policy:demo",
         principal=principal,
@@ -49,10 +52,9 @@ def main():
         delegation_proof=sig,
     )
 
-    # Execute
-    result = execute_model_call(request)
+    result, receipt = execute_and_sign(executor_priv, policy["decision_hash"], request)
 
-    agent = {"id": "agent:demo", "public_key": pub_b64, "key_type": "ed25519"}
+    agent = {"id": "agent:demo", "public_key": principal_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -61,16 +63,21 @@ def main():
         provider="xai",
         target="grok-4",
         result=result,
+        execution_receipt=receipt,
         settlement={"cost_usd": 0.002},
     )
 
-    ok, reason = verify_package(
+    store = InMemoryReplayStore()
+    ok, reason = verify_authorized_execution(
         package,
         policy_decision=policy,
-        principal_public_key_b64=pub_b64,
+        principal_public_key_b64=principal_b64,
         verification_time=datetime.now(timezone.utc),
+        expected_executor_public_key_b64=executor_b64,
+        request=request,
+        replay_store=store,
     )
-    print("End-to-end verification:", ok, reason)
+    print("Strong verification:", ok, reason)
     print("Result content:", result["data"]["content"])
 
 

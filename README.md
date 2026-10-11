@@ -4,22 +4,35 @@ Minimal prototype of an authority-and-evidence substrate.
 
 **Flow:** request → policy decision → Ed25519 delegation signature → execute → signed execution receipt → evidence package → independent verification.
 
-## Verification checks
+## Primary verification API
+
+`verify_authorized_execution` is the path for consequential actions. It requires:
+
+- principal public key (delegation signature)
+- verification_time (expiry)
+- expected executor public key (pinned)
+- original request (request hash binding)
+- replay store
+- a valid signed execution receipt
+
+A package that fails any of these is rejected. This authenticates both the authorization and the execution result.
+
+`verify_package` remains available for lower-level or policy-only checks. A success there does **not** authenticate the result unless an execution receipt was present and all receipt checks passed.
+
+## Verification checks (strong path)
 
 - Package self-hash
 - Policy decision hash match
 - Delegation signature (domain-separated over the decision hash)
-- Decision hash is SHA-256 of the canonical decision **excluding** `decision_hash` and `delegation_proof` (the signature is not inside the digest it signs)
-- Expiry (explicit verification_time required; production trusted time unresolved)
-- Policy bounds (action type, provider, target, cost)
-- Agent public key well-formedness (raw Ed25519 base64)
-- Execution receipt signature (domain-separated canonical payload)
+- Decision hash excludes `decision_hash` and `delegation_proof`
+- Expiry (explicit verification_time; production trusted time unresolved)
+- Policy bounds
+- Agent public key well-formedness
+- Execution receipt signature
 - Receipt binds decision_hash, request_hash, result_hash, execution_id, timestamp, executor key
-- When a receipt is present, `action_hash` must equal the receipt `request_hash`
-- Replay: a package with a receipt is accepted only when a replay store is passed. The execution id is recorded after every other check, and a reuse fails closed. The included store is in-memory only.
-- `require_execution_receipt=True` rejects a package with no receipt. The default is off, so a policy-only check can still pass. That pass does not authenticate the result.
-
-- A receipt is accepted only when `expected_executor_public_key_b64` is passed and matches the receipt. An unpinned receipt fails closed.
+- action_hash == receipt request_hash
+- Executor key pinned
+- Replay store required; execution_id recorded after all other checks
 
 ## Non-goals (this prototype)
 

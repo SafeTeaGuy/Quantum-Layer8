@@ -296,3 +296,32 @@ def verify_package(
             return False, "execution_id replay detected"
 
     return True, "ok"
+
+
+def verify_authorized_execution(
+    package: dict,
+    policy_decision: dict,
+    principal_public_key_b64: str,
+    verification_time: datetime,
+    expected_executor_public_key_b64: str,
+    request: dict,
+    replay_store: ReplayStore,
+    expected_agent_public_key_b64: str | None = None,
+) -> tuple[bool, str]:
+    """Primary verification API.
+
+    Requires the full set of inputs that authenticate both the authorization
+    and the execution result. A package without a valid signed receipt fails.
+    This is the path that should be used for consequential actions.
+    """
+    return verify_package(
+        package,
+        policy_decision=policy_decision,
+        principal_public_key_b64=principal_public_key_b64,
+        verification_time=verification_time,
+        expected_agent_public_key_b64=expected_agent_public_key_b64,
+        expected_executor_public_key_b64=expected_executor_public_key_b64,
+        request=request,
+        replay_store=replay_store,
+        require_execution_receipt=True,
+    )
