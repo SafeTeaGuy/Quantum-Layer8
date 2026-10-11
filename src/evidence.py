@@ -163,8 +163,8 @@ def verify_package(
     require_execution_receipt rejects a package that has none. The default is
     false so a policy-only package can still be checked; that pass does not
     authenticate the result.
-    Optional replay_store rejects reuse of execution_id, and only records it
-    after the rest of verification succeeds.
+    A receipt is accepted only when replay_store is supplied. The id is recorded
+    only after every other check has passed, and a reuse fails closed.
     """
     required = [
         "version", "agent_identity", "authorization", "action_hash",
@@ -286,8 +286,11 @@ def verify_package(
                 return False, "cost exceeds policy max_cost_usd"
 
     # Record only after every other check has passed, so a rejected package
-    # does not burn the execution_id.
-    if receipt is not None and replay_store is not None:
+    # does not burn the execution_id. A receipt with nowhere to record it is
+    # not accepted.
+    if receipt is not None:
+        if replay_store is None:
+            return False, "replay store required"
         eid = (receipt.get("payload") or {}).get("execution_id")
         if not eid or not replay_store.check_and_record(eid):
             return False, "execution_id replay detected"

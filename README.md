@@ -16,7 +16,7 @@ Minimal prototype of an authority-and-evidence substrate.
 - Execution receipt signature (domain-separated canonical payload)
 - Receipt binds decision_hash, request_hash, result_hash, execution_id, timestamp, executor key
 - When a receipt is present, `action_hash` must equal the receipt `request_hash`
-- Optional local replay store on execution_id (recorded only after every other check passes)
+- Replay: a package with a receipt is accepted only when a replay store is passed. The execution id is recorded after every other check, and a reuse fails closed. The included store is in-memory only.
 - `require_execution_receipt=True` rejects a package with no receipt. The default is off, so a policy-only check can still pass. That pass does not authenticate the result.
 
 - A receipt is accepted only when `expected_executor_public_key_b64` is passed and matches the receipt. An unpinned receipt fails closed.
