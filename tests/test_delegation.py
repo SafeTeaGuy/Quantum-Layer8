@@ -1,5 +1,7 @@
 """Focused tests for Ed25519 delegation binding."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 from src.delegation import (
@@ -11,6 +13,8 @@ from src.delegation import (
     delegation_message,
 )
 from src.evidence import build_policy_decision, build_package, verify_package, decision_hash
+
+_BEFORE_EXPIRY = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
 
 def _make_signed_policy(private, public):
@@ -68,7 +72,7 @@ def test_malformed_signature_fails():
 def test_package_verification_with_signature():
     private, public = generate_keypair()
     policy, pub_b64 = _make_signed_policy(private, public)
-    agent = {"id": "agent:1", "public_key": "ed25519:x", "key_type": "ed25519"}
+    agent = {"id": "agent:1", "public_key": pub_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -79,7 +83,12 @@ def test_package_verification_with_signature():
         result={"type": "model_response", "data": {}, "status": "ok"},
         settlement={"cost_usd": 0.01},
     )
-    ok, reason = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=_BEFORE_EXPIRY,
+    )
     assert ok, reason
 
 
@@ -88,7 +97,7 @@ def test_swapped_signature_fails_package_verify():
     private2, public2 = generate_keypair()
     policy1, pub1 = _make_signed_policy(private1, public1)
     policy2, _ = _make_signed_policy(private2, public2)
-    agent = {"id": "agent:1", "public_key": "x", "key_type": "ed25519"}
+    agent = {"id": "agent:1", "public_key": pub1, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy1,

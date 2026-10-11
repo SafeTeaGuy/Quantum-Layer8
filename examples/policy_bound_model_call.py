@@ -45,7 +45,7 @@ def main():
     # 3. Agent executes within policy (mocked)
     agent = {
         "id": "agent:example-01",
-        "public_key": "ed25519:" + pub_b64,
+        "public_key": pub_b64,
         "key_type": "ed25519",
     }
 
@@ -78,12 +78,22 @@ def main():
     print("Package hash:", package["package_hash"])
 
     # 4. Independent verification with signature check
-    ok, reason = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=datetime.now(timezone.utc),
+    )
     print(f"Verification: {ok} ({reason})")
 
     # Tamper the result (package hash fails)
     package["result"]["data"]["content"] = "tampered"
-    ok2, reason2 = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok2, reason2 = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=datetime.now(timezone.utc),
+    )
     print(f"After result tamper: {ok2} ({reason2})")
 
     # Cost violation
@@ -97,7 +107,12 @@ def main():
         result=result,
         settlement={"cost_usd": 1.0},
     )
-    ok3, reason3 = verify_package(bad, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok3, reason3 = verify_package(
+        bad,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=datetime.now(timezone.utc),
+    )
     print(f"Cost violation: {ok3} ({reason3})")
 
     # Wrong signature (swapped)

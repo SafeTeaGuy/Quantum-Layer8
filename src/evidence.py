@@ -29,13 +29,24 @@ def _canonical(obj: dict) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def _hash(obj: dict, exclude: str | None = None) -> str:
-    copy = {k: v for k, v in obj.items() if k != exclude}
+def _hash(obj: dict, exclude: str | tuple[str, ...] | None = None) -> str:
+    if exclude is None:
+        skip: set[str] = set()
+    elif isinstance(exclude, str):
+        skip = {exclude}
+    else:
+        skip = set(exclude)
+    copy = {k: v for k, v in obj.items() if k not in skip}
     return hashlib.sha256(_canonical(copy)).hexdigest()
 
 
 def decision_hash(decision: dict) -> str:
-    return _hash(decision, exclude="decision_hash")
+    """SHA-256 of the decision body.
+
+    Excludes decision_hash and delegation_proof. The delegation signature is
+    over this digest, so the proof must not be inside the hashed bytes.
+    """
+    return _hash(decision, exclude=("decision_hash", "delegation_proof"))
 
 
 def package_hash(package: dict) -> str:
@@ -145,8 +156,10 @@ def verify_package(
     """Verify package integrity, policy bounds, delegation signature, expiry, agent key, and execution receipt.
 
     verification_time must be supplied for expiry checks. Production trusted-time
-    is not claimed. When an execution_receipt is present it is independently verified.
-    Optional replay_store rejects reuse of execution_id.
+    is not claimed. When an execution_receipt is present it is independently
+    verified, and action_hash must equal the receipt request_hash.
+    Optional replay_store rejects reuse of execution_id, and only records it
+    after the rest of verification succeeds.
     """
     required = [
         "version", "agent_identity", "authorization", "action_hash",
@@ -220,15 +233,11 @@ def verify_package(
         actual_result_hash = compute_result_hash(package["result"])
         if payload.get("result_hash") != actual_result_hash:
             return False, "receipt result_hash mismatch"
+        if payload.get("request_hash") != package.get("action_hash"):
+            return False, "receipt request_hash does not match action_hash"
         if expected_executor_public_key_b64 is not None:
             if exec_pub_b64 != expected_executor_public_key_b64:
                 return False, "executor public key mismatch"
-
-        # Optional replay check
-        if replay_store is not None:
-            eid = payload.get("execution_id")
-            if not eid or not replay_store.check_and_record(eid):
-                return False, "execution_id replay detected"
 
     if policy_decision is not None:
         if decision_hash(policy_decision) != decision_hash_value:
@@ -266,5 +275,12 @@ def verify_package(
             cost = (package.get("settlement") or {}).get("cost_usd")
             if cost is not None and cost > max_cost:
                 return False, "cost exceeds policy max_cost_usd"
+
+    # Record only after every other check has passed, so a rejected package
+    # does not burn the execution_id.
+    if receipt is not None and replay_store is not None:
+        eid = (receipt.get("payload") or {}).get("execution_id")
+        if not eid or not replay_store.check_and_record(eid):
+            return False, "execution_id replay detected"
 
     return True, "ok"

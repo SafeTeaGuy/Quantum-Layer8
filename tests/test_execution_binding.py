@@ -1,5 +1,7 @@
 """Adversarial tests for execution-to-authorization binding."""
 
+from datetime import datetime, timezone
+
 from src.delegation import generate_keypair, public_key_to_b64, sign_delegation
 from src.evidence import build_policy_decision, build_package, verify_package, decision_hash, package_hash
 from src.mock_executor import execute_model_call
@@ -31,12 +33,15 @@ def _signed_policy(private, public, max_cost=0.1, providers=None, targets=None):
     ), public_key_to_b64(public)
 
 
+_BEFORE_EXPIRY = datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+
 def test_decision_a_signature_b_fails():
     priv_a, pub_a = generate_keypair()
     priv_b, pub_b = generate_keypair()
     policy_a, pub_a_b64 = _signed_policy(priv_a, pub_a)
     policy_b, _ = _signed_policy(priv_b, pub_b)
-    agent = {"id": "a", "public_key": "x", "key_type": "ed25519"}
+    agent = {"id": "a", "public_key": pub_a_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy_a,
@@ -58,8 +63,8 @@ def test_package_a_decision_b_fails():
     priv_a, pub_a = generate_keypair()
     priv_b, pub_b = generate_keypair()
     policy_a, pub_a_b64 = _signed_policy(priv_a, pub_a)
-    policy_b, pub_b_b64 = _signed_policy(priv_b, pub_b)
-    agent = {"id": "a", "public_key": "x", "key_type": "ed25519"}
+    policy_b, pub_b_b64 = _signed_policy(priv_b, pub_b, max_cost=9.0)
+    agent = {"id": "a", "public_key": pub_a_b64, "key_type": "ed25519"}
     package_a = build_package(
         agent_identity=agent,
         policy_decision=policy_a,
@@ -77,7 +82,7 @@ def test_package_a_decision_b_fails():
 def test_cost_exceeds_after_authorization_fails():
     priv, pub = generate_keypair()
     policy, pub_b64 = _signed_policy(priv, pub, max_cost=0.01)
-    agent = {"id": "a", "public_key": "x", "key_type": "ed25519"}
+    agent = {"id": "a", "public_key": pub_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -88,7 +93,12 @@ def test_cost_exceeds_after_authorization_fails():
         result={"type": "x", "data": {}},
         settlement={"cost_usd": 1.0},
     )
-    ok, reason = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=_BEFORE_EXPIRY,
+    )
     assert not ok
     assert "cost exceeds" in reason
 
@@ -96,7 +106,7 @@ def test_cost_exceeds_after_authorization_fails():
 def test_provider_not_allowed_fails():
     priv, pub = generate_keypair()
     policy, pub_b64 = _signed_policy(priv, pub, providers=["openai"])
-    agent = {"id": "a", "public_key": "x", "key_type": "ed25519"}
+    agent = {"id": "a", "public_key": pub_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -106,7 +116,12 @@ def test_provider_not_allowed_fails():
         target="grok-4",
         result={"type": "x", "data": {}},
     )
-    ok, reason = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=_BEFORE_EXPIRY,
+    )
     assert not ok
     assert "provider not allowed" in reason
 

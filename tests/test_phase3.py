@@ -58,10 +58,31 @@ def test_expired_decision_fails():
 
 def test_malformed_expiry_fails():
     priv, pub = generate_keypair()
-    policy, pub_b64 = _make_policy(priv)
-    policy["expires_at"] = "not-a-date"
-    # re-hash not needed for this path if we force
-    agent = {"id": "a", "public_key": public_key_to_b64(pub), "key_type": "ed25519"}
+    principal = {"id": "user:alice", "type": "human"}
+    expires = "not-a-date"
+    unsigned = {
+        "policy_id": "p",
+        "principal": principal,
+        "allowed_action_types": ["model_call"],
+        "allowed_providers": ["xai"],
+        "allowed_targets": ["grok-4"],
+        "max_cost_usd": 0.1,
+        "expires_at": expires,
+        "delegation_proof": "",
+    }
+    sig = sign_delegation(priv, decision_hash(unsigned))
+    policy = build_policy_decision(
+        policy_id="p",
+        principal=principal,
+        allowed_action_types=["model_call"],
+        allowed_providers=["xai"],
+        allowed_targets=["grok-4"],
+        max_cost_usd=0.1,
+        expires_at=expires,
+        delegation_proof=sig,
+    )
+    pub_b64 = public_key_to_b64(pub)
+    agent = {"id": "a", "public_key": pub_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -191,3 +212,69 @@ def test_full_successful_path():
         request=request,
     )
     assert ok, reason
+
+
+def test_receipt_action_hash_mismatch_fails():
+    priv_exec, pub_exec = generate_keypair()
+    priv_prin, pub_prin = generate_keypair()
+    policy, prin_b64 = _make_policy(priv_prin)
+    request = {"model": "grok-4", "messages": [{"role": "user", "content": "hi"}]}
+    result, receipt = execute_and_sign(priv_exec, policy["decision_hash"], request)
+    agent = {"id": "a", "public_key": public_key_to_b64(pub_prin), "key_type": "ed25519"}
+    package = build_package(
+        agent_identity=agent,
+        policy_decision=policy,
+        action_hash="ab" * 32,
+        action_type="model_call",
+        provider="xai",
+        target="grok-4",
+        result=result,
+        execution_receipt=receipt,
+    )
+    now = datetime.now(timezone.utc)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=prin_b64,
+        verification_time=now,
+        expected_executor_public_key_b64=public_key_to_b64(pub_exec),
+        request=request,
+    )
+    assert not ok
+    assert "action_hash" in reason
+
+
+def test_failed_expiry_does_not_consume_replay_id():
+    priv_exec, pub_exec = generate_keypair()
+    priv_prin, pub_prin = generate_keypair()
+    policy, prin_b64 = _make_policy(priv_prin, expires_offset_hours=-1)
+    request = {"model": "grok-4", "messages": [{"role": "user", "content": "hi"}]}
+    result, receipt = execute_and_sign(
+        priv_exec, policy["decision_hash"], request, execution_id="once"
+    )
+    agent = {"id": "a", "public_key": public_key_to_b64(pub_prin), "key_type": "ed25519"}
+    package = build_package(
+        agent_identity=agent,
+        policy_decision=policy,
+        action_hash=request_hash(request),
+        action_type="model_call",
+        provider="xai",
+        target="grok-4",
+        result=result,
+        execution_receipt=receipt,
+    )
+    store = InMemoryReplayStore()
+    now = datetime.now(timezone.utc)
+    kwargs = dict(
+        policy_decision=policy,
+        principal_public_key_b64=prin_b64,
+        verification_time=now,
+        expected_executor_public_key_b64=public_key_to_b64(pub_exec),
+        request=request,
+        replay_store=store,
+    )
+    ok1, reason1 = verify_package(package, **kwargs)
+    ok2, reason2 = verify_package(package, **kwargs)
+    assert not ok1 and "expired" in reason1
+    assert not ok2 and "expired" in reason2
+    assert not store.seen("once")

@@ -44,7 +44,7 @@
     "decision_hash": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
-      "description": "SHA-256 of the canonical form excluding this field"
+      "description": "SHA-256 of the canonical decision excluding decision_hash and delegation_proof. The delegation signature is over this digest."
     }
   }
 }

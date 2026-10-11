@@ -8,13 +8,17 @@ Minimal prototype of an authority-and-evidence substrate.
 
 - Package self-hash
 - Policy decision hash match
-- Delegation signature (domain-separated over decision hash)
+- Delegation signature (domain-separated over the decision hash)
+- Decision hash is SHA-256 of the canonical decision **excluding** `decision_hash` and `delegation_proof` (the signature is not inside the digest it signs)
 - Expiry (explicit verification_time required; production trusted time unresolved)
 - Policy bounds (action type, provider, target, cost)
 - Agent public key well-formedness (raw Ed25519 base64)
 - Execution receipt signature (domain-separated canonical payload)
 - Receipt binds decision_hash, request_hash, result_hash, execution_id, timestamp, executor key
-- Optional local replay store on execution_id
+- When a receipt is present, `action_hash` must equal the receipt `request_hash`
+- Optional local replay store on execution_id (recorded only after every other check passes)
+
+A package with no `execution_receipt` does not authenticate the result. The executor key is trusted only when the verifier passes the expected key. Either omission lets a packager attach a result the honest executor did not sign.
 
 ## Non-goals (this prototype)
 

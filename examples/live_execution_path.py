@@ -52,7 +52,7 @@ def main():
     # Execute
     result = execute_model_call(request)
 
-    agent = {"id": "agent:demo", "public_key": "ed25519:" + pub_b64, "key_type": "ed25519"}
+    agent = {"id": "agent:demo", "public_key": pub_b64, "key_type": "ed25519"}
     package = build_package(
         agent_identity=agent,
         policy_decision=policy,
@@ -64,7 +64,12 @@ def main():
         settlement={"cost_usd": 0.002},
     )
 
-    ok, reason = verify_package(package, policy_decision=policy, principal_public_key_b64=pub_b64)
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=datetime.now(timezone.utc),
+    )
     print("End-to-end verification:", ok, reason)
     print("Result content:", result["data"]["content"])
 
