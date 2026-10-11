@@ -152,12 +152,16 @@ def verify_package(
     expected_executor_public_key_b64: str | None = None,
     request: dict | None = None,
     replay_store: ReplayStore | None = None,
+    require_execution_receipt: bool = False,
 ) -> tuple[bool, str]:
     """Verify package integrity, policy bounds, delegation signature, expiry, agent key, and execution receipt.
 
     verification_time must be supplied for expiry checks. Production trusted-time
     is not claimed. When an execution_receipt is present it is independently
     verified, and action_hash must equal the receipt request_hash.
+    require_execution_receipt rejects a package that has none. The default is
+    false so a policy-only package can still be checked; that pass does not
+    authenticate the result.
     Optional replay_store rejects reuse of execution_id, and only records it
     after the rest of verification succeeds.
     """
@@ -211,7 +215,10 @@ def verify_package(
 
     # Execution receipt verification (independent of package hash)
     receipt = package.get("execution_receipt")
-    if receipt is not None:
+    if receipt is None:
+        if require_execution_receipt:
+            return False, "missing execution_receipt"
+    else:
         if not isinstance(receipt, dict) or "payload" not in receipt or "signature" not in receipt:
             return False, "malformed execution_receipt"
         payload = receipt["payload"]

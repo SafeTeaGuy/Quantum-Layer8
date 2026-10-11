@@ -214,6 +214,38 @@ def test_full_successful_path():
     assert ok, reason
 
 
+def test_missing_receipt_rejected_only_when_required():
+    priv, pub = generate_keypair()
+    policy, pub_b64 = _make_policy(priv)
+    agent = {"id": "a", "public_key": public_key_to_b64(pub), "key_type": "ed25519"}
+    package = build_package(
+        agent_identity=agent,
+        policy_decision=policy,
+        action_hash="d" * 64,
+        action_type="model_call",
+        provider="xai",
+        target="grok-4",
+        result={"type": "x", "data": {}},
+    )
+    now = datetime.now(timezone.utc)
+    ok_default, reason_default = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=now,
+    )
+    assert ok_default, reason_default
+    ok, reason = verify_package(
+        package,
+        policy_decision=policy,
+        principal_public_key_b64=pub_b64,
+        verification_time=now,
+        require_execution_receipt=True,
+    )
+    assert not ok
+    assert reason == "missing execution_receipt"
+
+
 def test_receipt_action_hash_mismatch_fails():
     priv_exec, pub_exec = generate_keypair()
     priv_prin, pub_prin = generate_keypair()

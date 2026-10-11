@@ -17,8 +17,9 @@ Minimal prototype of an authority-and-evidence substrate.
 - Receipt binds decision_hash, request_hash, result_hash, execution_id, timestamp, executor key
 - When a receipt is present, `action_hash` must equal the receipt `request_hash`
 - Optional local replay store on execution_id (recorded only after every other check passes)
+- `require_execution_receipt=True` rejects a package with no receipt. The default is off, so a policy-only check can still pass. That pass does not authenticate the result.
 
-A package with no `execution_receipt` does not authenticate the result. The executor key is trusted only when the verifier passes the expected key. Either omission lets a packager attach a result the honest executor did not sign.
+The executor key is trusted only when the verifier passes the expected key. Without that pin, a packager can sign a receipt with their own key.
 
 ## Non-goals (this prototype)
 
