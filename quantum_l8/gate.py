@@ -32,7 +32,7 @@ from __future__ import annotations
 import threading
 
 from quantum_l8 import suites
-from quantum_l8.canonical import digest
+from quantum_l8.canonical import digest, is_hex64
 from quantum_l8.contracts import (
     CIRCUIT_PINNED,
     DELEGATION_DOMAIN,
@@ -216,6 +216,11 @@ class QuantumTrustGate:
         try:
             b = env["body"]
             if b.get("schema_version") != REVOCATION_SCHEMA or canonical_id(b, "revocation_id") != b.get("revocation_id"):
+                return "REVOCATION_MALFORMED"
+            eff = b.get("effective_at_ms")
+            if not isinstance(eff, int) or isinstance(eff, bool) or eff < 0:
+                return "REVOCATION_MALFORMED"
+            if b.get("target_kind") not in ("DELEGATION", "AGENT") or not is_hex64(b.get("target_id")):
                 return "REVOCATION_MALFORMED"
             issuer = self.identities.get(b["issuer_id"])
             if issuer is None:
@@ -404,8 +409,15 @@ class QuantumTrustGate:
             reasons.append("WORKLOAD_DIGEST_MISMATCH")
         if program_text is None:
             reasons.append("PROGRAM_MISSING")
-        elif program_digest(program_text) != w["program_digest"]:
-            reasons.append("PROGRAM_DIGEST_MISMATCH")
+        else:
+            try:
+                pd = program_digest(program_text)
+            except Exception:
+                pd = None
+            if pd is None:
+                reasons.append("PROGRAM_MALFORMED")
+            elif pd != w["program_digest"]:
+                reasons.append("PROGRAM_DIGEST_MISMATCH")
 
         backend = self.backends.get(req["backend"]["backend_id"])
         if backend is None:

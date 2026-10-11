@@ -88,8 +88,10 @@ The verifier reports one status per dimension and no single "valid" verdict.
 | reexecution | ESTABLISHED / FAILED / NOT_CHECKED / INSUFFICIENT_EVIDENCE |
 | **revocation** | FAILED / **INSUFFICIENT_EVIDENCE**, never ESTABLISHED |
 
-`chain_established` requires the first twelve dimensions. Provider execution
-and revocation completeness can never contribute to it.
+`chain_established` requires the first twelve dimensions and requires that
+`revocation` is not FAILED. A revocation visible in the log that predates
+execution defeats the chain; its absence proves nothing. Provider execution
+and revocation completeness can never establish it.
 
 ## 4. Limits, and the stop condition this work hit
 

@@ -62,6 +62,30 @@ def tvd_tolerance(ideal: dict[str, float], shots: int) -> float:
     return min(1.0, math.sqrt((len(ideal) + 1) / shots))
 
 
+def provider_output_problem(run) -> str | None:
+    """Shape check for adapter output. Returns a code, or None if usable."""
+    if not isinstance(run, dict):
+        return "NOT_A_MAPPING"
+    for k in ("provider_job_id", "provider_reported_backend", "provider_reported_status"):
+        if not isinstance(run.get(k), str):
+            return f"FIELD:{k}"
+    counts = run.get("counts")
+    if not isinstance(counts, dict) or not all(
+            isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) and v >= 0 for k, v in counts.items()):
+        return "FIELD:counts"
+    s = run.get("shots_reported")
+    if not isinstance(s, int) or isinstance(s, bool):
+        return "FIELD:shots_reported"
+    c = run.get("reported_cost_micro_usd")
+    if c is not None and (not isinstance(c, int) or isinstance(c, bool)):
+        return "FIELD:reported_cost_micro_usd"
+    try:
+        digest({"m": run.get("provider_metadata"), "r": run.get("reproducibility")})
+    except Exception:
+        return "NOT_CANONICAL"
+    return None
+
+
 class Executor:
     def __init__(self, key: suites.KeyBundle, gate, adapters: dict, destinations: dict, log, clock=None):
         self.key = key
@@ -76,6 +100,18 @@ class Executor:
         return self.key.identity_id()
 
     def run(self, authorization_env: dict, request_env: dict, program_text: str) -> dict:
+        """Never raises for malformed inputs or provider output: before
+        consumption it returns a named refusal; after consumption it always
+        signs a receipt (UNKNOWN if the provider output is unusable)."""
+        try:
+            pre = self._precheck(authorization_env, request_env, program_text)
+        except Exception as e:
+            return {"executed": False, "reason": "AUTHORIZATION_OR_REQUEST_MALFORMED", "detail": type(e).__name__}
+        if "reason" in pre:
+            return pre
+        return self._execute(authorization_env, request_env, program_text, pre["descriptor"], pre["adapter"])
+
+    def _precheck(self, authorization_env, request_env, program_text) -> dict:
         a = authorization_env["body"]
         ok, why = suites.verify(self.gate.key.public_identity(), AUTHORIZATION_DOMAIN, a, authorization_env["proof"])
         if not ok:
@@ -96,7 +132,11 @@ class Executor:
         refusal = adapter.preflight(program_text, w, descriptor)
         if refusal:
             return {"executed": False, "reason": f"PREFLIGHT_REFUSED:{refusal}"}
+        return {"descriptor": descriptor, "adapter": adapter}
 
+    def _execute(self, authorization_env, request_env, program_text, descriptor, adapter) -> dict:
+        a = authorization_env["body"]
+        w = request_env["body"]["workload"]
         consumed, creason = self.gate.consume(authorization_env, self.executor_id, self.clock())
         if not consumed:
             return {"executed": False, "reason": creason}
@@ -106,9 +146,15 @@ class Executor:
         run, outcome, findings = None, UNKNOWN, []
         try:
             run = adapter.submit(program_text, w, descriptor, a["authorization_id"])
-            outcome = SUCCEEDED if run.get("provider_reported_status") == "COMPLETED" else FAILED
         except Exception as e:  # never success on an exception
             findings.append(f"ADAPTER_EXCEPTION:{type(e).__name__}")
+        if run is not None:
+            problem = provider_output_problem(run)
+            if problem:
+                findings.append(f"PROVIDER_OUTPUT_MALFORMED:{problem}")
+                run = None  # untrusted output is not recorded as if it were well-formed
+            else:
+                outcome = SUCCEEDED if run["provider_reported_status"] == "COMPLETED" else FAILED
         completed_at = self.clock()
 
         counts = (run or {}).get("counts")

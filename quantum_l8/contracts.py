@@ -223,7 +223,7 @@ def delegation_well_formed(env) -> bool:
     for k in ("max_shots_per_execution", "max_executions", "max_cost_micro_usd_per_execution", "max_total_cost_micro_usd"):
         if not _nonneg_int(s[k]):
             return False
-    if b["crypto_policy"] not in LEVELS:
+    if not isinstance(b["crypto_policy"], str) or b["crypto_policy"] not in LEVELS:
         return False
     if not isinstance(b["may_redelegate"], bool):
         return False
@@ -372,7 +372,7 @@ def request_well_formed(env) -> bool:
             return False
     if not isinstance(b["result_destination"], str) or not b["result_destination"]:
         return False
-    return b["crypto_policy"] in LEVELS
+    return isinstance(b["crypto_policy"], str) and b["crypto_policy"] in LEVELS
 
 
 # --- revocation ---

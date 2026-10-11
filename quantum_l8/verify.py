@@ -32,6 +32,7 @@ import sys
 from quantum_l8 import suites
 from quantum_l8.canonical import digest
 from quantum_l8.contracts import (
+    estimate_cost_micro_usd,
     DELEGATION_DOMAIN,
     REQUEST_DOMAIN,
     chain_digest,
@@ -109,7 +110,9 @@ def verify_bundle(bundle: dict, roots: dict, reexecute: bool = False) -> dict:
         _verify(bundle, roots, reexecute, r)
     except Exception as e:  # malformed input is a named failure, never success
         r.add("bundle", FAILED, f"BUNDLE_MALFORMED:{type(e).__name__}")
-    established = all(r.status(d) == ESTABLISHED for d in CHAIN_DIMENSIONS)
+    # A revocation visible in the log that predates execution defeats the
+    # chain. Its absence proves nothing (completeness is never established).
+    established = all(r.status(d) == ESTABLISHED for d in CHAIN_DIMENSIONS) and r.status("revocation") != FAILED
     return {
         "verifier": "l8x.quantum-independent-verifier.v0",
         "chain_established": established,
@@ -261,6 +264,22 @@ def _verify(b: dict, roots: dict, reexecute: bool, r: _Report) -> None:
         if desc["backend_class"] != a["backend_class"] or desc["provider"] != a["provider"]:
             codes.append("BACKEND_CLASS_OR_PROVIDER_SUBSTITUTED")
         codes += scope_violations([e["body"] for e in chain], req["workload"], desc, req)
+        # Re-derive the gate's non-scope checks too: the gate is not trusted
+        # to have applied them.
+        if estimate_cost_micro_usd(desc, req["workload"]["shots"]) > req["cost_limit_micro_usd"]:
+            codes.append("COST_ESTIMATE_EXCEEDS_REQUEST_LIMIT")
+    if req["workload"]["num_qubits"] > req["resource_limits"]["max_qubits"]:
+        codes.append("QUBITS_EXCEED_REQUEST_LIMIT")
+    if any(e["body"]["tenant_id"] != req["tenant_id"] for e in chain):
+        codes.append("TENANT_MISMATCH")
+    if a["intended_executor_id"] not in policy["executor_ids"]:
+        codes.append("EXECUTOR_NOT_PERMITTED")
+    if chain and chain[0]["body"]["issuer_id"] not in policy["root_principal_ids"]:
+        codes.append("ROOT_PRINCIPAL_NOT_IN_POLICY")
+    if not (a["issued_at_ms"] < req["execution_deadline_ms"]):
+        codes.append("ISSUED_AFTER_DEADLINE")
+    if req["created_at_ms"] > a["issued_at_ms"] + policy["max_clock_skew_ms"]:
+        codes.append("REQUEST_FROM_FUTURE")
     if a["reserved_cost_micro_usd"] != req["cost_limit_micro_usd"]:
         codes.append("RESERVED_COST_MISMATCH")
     if any(not (e["body"]["not_before_ms"] <= a["issued_at_ms"] < e["body"]["expires_at_ms"]) for e in chain):
@@ -346,7 +365,7 @@ def _verify(b: dict, roots: dict, reexecute: bool, r: _Report) -> None:
     r.add("log_binding", *_log_binding(log, dec_env, auth_env, rec_env, chain))
 
     # Revocation: only what this log shows.
-    targets = {e["body"]["delegation_id"] for e in chain} | {req["agent_id"]}
+    targets = {e["body"]["delegation_id"] for e in chain} | {e["body"]["issuer_id"] for e in chain} | {req["agent_id"]}
     revs = [e for e in log["entries"] if e["kind"] == "REVOCATION_RECORDED" and e["body"]["target_id"] in targets
             and e["body"]["effective_at_ms"] <= ex_info["submitted_at_ms"]]
     if revs:

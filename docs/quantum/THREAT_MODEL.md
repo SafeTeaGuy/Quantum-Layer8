@@ -60,7 +60,7 @@ gate's consume step. "Verifier" means `verify_bundle`.
 | 9 | Receipt substitution: the receipt of another execution | Verifier | `RECEIPT_AUTHORIZATION_ID_MISMATCH` … | `test_receipt_substitution` |
 | 10 | Cross-domain delegation (another Layer8 domain's principal) | Gate | `ROOT_PRINCIPAL_NOT_PERMITTED` | `test_cross_domain_delegation` |
 | 10b | Cross-tenant execution | Gate | `TENANT_MISMATCH`, `BACKEND_TENANT_NOT_PERMITTED` | `test_cross_tenant` |
-| 11 | Revoked authority: before the decision, between authorization and execution, scheduled; delegation, agent, issuer or root principal | Gate, Exec | `REVOKED_DELEGATION`, `REVOKED_AGENT`, `REVOKED_ISSUER` | `test_revocation_*`, `test_scheduled_revocation_takes_effect_later`, `test_root_principal_identity_revoked_by_operator` |
+| 11 | Revoked authority: before the decision, between authorization and execution, scheduled; delegation, agent, issuer or root principal | Gate, Exec; Verifier if the revocation is in the log | `REVOKED_DELEGATION`, `REVOKED_AGENT`, `REVOKED_ISSUER`; verifier `REVOCATION_EFFECTIVE_BEFORE_EXECUTION` blocks `chain_established` | `test_revocation_*`, `test_scheduled_revocation_takes_effect_later`, `test_root_principal_identity_revoked_by_operator` |
 | 11b | Revocation by an unauthorized party | Gate | `REVOCATION_UNAUTHORIZED_REVOKER` | `test_agent_revocation_by_operator_only` |
 | 11c | Revocation that exists but is **not in the evidence log** | Verifier | **CANNOT PROVE** completeness. `revocation` is always `INSUFFICIENT_EVIDENCE` | `test_end_to_end_chain_verifies_with_reexecution` |
 | 12 | Expired authority: delegation, deadline, authorization window | Gate, Exec, Verifier | `DELEGATION_EXPIRED`, `EXECUTION_DEADLINE_PASSED`, `AUTHORIZATION_EXPIRED`, `SUBMITTED_OUTSIDE_AUTHORIZATION_WINDOW` | `test_expired_*`, `test_authorization_expires`, `test_expired_authorization_window_in_bundle` |
@@ -77,7 +77,10 @@ gate's consume step. "Verifier" means `verify_bundle`.
 | 20 | Stolen signed request | Gate | Another tenant gets `TENANT_MISMATCH`. Same tenant: the thief cannot change the destination, but **can pre-empt** the victim (availability, not authority) | `test_stolen_request_gives_thief_nothing` |
 | 21 | Result exfiltration to another destination | Gate, Exec | `RESULT_DESTINATION_NOT_AUTHORIZED`; delivery only to the authorized sink | `test_result_destination`, `test_result_goes_only_to_authorized_destination` |
 | 22 | Compromised router chooses an unpermitted backend | Router, Gate | `ROUTE_NOT_PERMITTED`; the gate refuses independently | `test_compromised_optimizer_cannot_route_outside_authority` |
-| 23 | Malformed or non-canonical input (float, unknown field, unknown schema) | Gate, Verifier | `REQUEST_MALFORMED`, `REQUEST_SCHEMA_UNSUPPORTED`, `BUNDLE_MALFORMED` | `test_schema_malformed_missing_inputs`, `test_malformed_bundle_is_a_named_failure` |
+| 23 | Malformed or non-canonical input (float, unknown field, unknown schema, unhashable value, un-encodable program text) | Gate, Exec, Verifier | `REQUEST_MALFORMED`, `REQUEST_SCHEMA_UNSUPPORTED`, `PROGRAM_MALFORMED`, `AUTHORIZATION_OR_REQUEST_MALFORMED`, `BUNDLE_MALFORMED` | `test_schema_malformed_missing_inputs`, `test_unhashable_crypto_policy_is_malformed`, `test_unencodable_program_text`, `test_malformed_bundle_is_a_named_failure` |
+| 24 | Malformed revocation (missing or non-integer effective time, bad target) reported as recorded but not enforced | Gate | `REVOCATION_MALFORMED` | `test_revocation_effective_time_must_be_an_int` |
+| 25 | Malformed provider output after consumption (float metadata, missing counts) | Exec | signed receipt with outcome `UNKNOWN`, `PROVIDER_OUTPUT_MALFORMED:*`, no delivery | `test_malformed_provider_output_yields_unknown_receipt` |
+| 26 | Key-holding gate skips tenant, qubit-limit or cost-estimate checks | Verifier | `TENANT_MISMATCH`, `QUBITS_EXCEED_REQUEST_LIMIT`, `COST_ESTIMATE_EXCEEDS_REQUEST_LIMIT` in `authorization_scope` | `test_verifier_rederives_*` |
 
 ## 4. What Layer8 can prove, and what it cannot
 
@@ -112,6 +115,18 @@ gate's consume step. "Verifier" means `verify_bundle`.
   Ed25519-only components, that includes a future CRQC.
 
 ## 5. Residual risks to track
+
+- **Cross-execution budgets are not verifiable from one bundle.** A
+  key-holding gate that authorizes more executions or more total cost than a
+  delegation allows, spread across several jobs, is not detected by
+  verifying any single bundle. Detecting it needs per-authorization
+  delegation and cost records in the log, plus a verifier pass over the
+  whole log.
+- **`resource_limits.max_runtime_ms` is carried and signed but not
+  enforced.** No adapter implements a timeout.
+- Rows 23–26 come from an adversarial review of this prototype. Each was
+  reproduced before it was fixed, and each regression test was confirmed to
+  fail on the pre-fix code (`tests/quantum/test_review_regressions.py`).
 
 - The verifier shares code with the producer (`suites`, `contracts`). A
   shared bug would be invisible to it. Mitigation: a standalone second

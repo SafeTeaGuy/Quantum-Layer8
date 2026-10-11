@@ -35,12 +35,13 @@ establishes:
 It reports `provider_execution: CLAIMED` and
 `revocation: INSUFFICIENT_EVIDENCE`, which is by design.
 
-The 90 tests in `tests/quantum/` cover:
+The 98 tests in `tests/quantum/` cover:
 
 - every gate question in Phase 3;
 - the scoped-agent cases in Phase 8;
 - every attack listed in Phase 9, plus extras;
-- three pinned "cannot prove" limits.
+- three pinned "cannot prove" limits;
+- 8 regressions from an adversarial review: fail-open revocation, crash paths, and checks the verifier did not re-derive.
 
 **Not demonstrated:** a real QPU. There are no IBM credentials here, and the
 adapter design in IBM_QISKIT_ADAPTER.md §3 is unimplemented. Even with one,
