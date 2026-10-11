@@ -1,0 +1,7 @@
+# Quantum branch prototype (quantum_l8/). Kept separate from the base
+# requirements so the evidence format itself still needs no quantum SDK.
+cryptography>=50.0.0   # ML-DSA (FIPS 204) via OpenSSL; tests fail if unavailable
+qiskit>=2.0,<3
+qiskit-qasm3-import>=0.5
+numpy>=1.26
+pytest>=8.0.0

@@ -44,6 +44,21 @@ A package that fails any of these is rejected. This authenticates both the autho
 
 Quantum adapters remain optional extensions that emit under the same evidence path.
 
+## Quantum branch (experimental)
+
+`quantum_l8/` tests whether Layer8's authority and evidence model can govern
+quantum (and other) compute **without performing it**. It covers who
+authorized a job, which exact workload and backend, under which
+cryptographic policy, and what evidence binds the returned result to that
+authorization. It does not claim that Layer8 "has quantum", proves quantum
+execution, or is quantum-safe.
+
+- Findings, threat model and limits: [docs/quantum/](docs/quantum/), starting
+  with [ROADMAP.md](docs/quantum/ROADMAP.md)
+- Demo: `pip install -r requirements.txt -r requirements-quantum.txt`, then
+  `python -m examples.quantum_end_to_end`
+- Tests: `pytest tests/quantum -q`
+
 ## Status
 
 Local software-key prototype. **Not production-ready.**

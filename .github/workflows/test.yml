@@ -12,5 +12,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt pytest
+      - run: pip install -r requirements.txt -r requirements-quantum.txt
       - run: pytest tests/ -q
+      - run: python -m examples.quantum_end_to_end quantum_demo_out
